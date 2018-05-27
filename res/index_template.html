@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/css/bootstrap.min.css" integrity="sha384-9gVQ4dYFwwWSjIDZnLEWnxCjeSWFphJiwGPXr1jddIhOegiu1FwO5qRGvFXOdJZ4" crossorigin="anonymous">
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/js/bootstrap.min.js" integrity="sha384-uefMccjFJAIv6A+rW+L4AHf99KvxDjWSu1z9VI8SKNVmz4sk7buKt/6v9KI65qnm" crossorigin="anonymous"></script>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="60"/>
+    <title>Privacy Project User Study</title>
+
+
+
+
+
+
+
+
+    <style>
+        .range {
+  -webkit-appearance: none;
+}
+
+input[type=range]:focus {
+  outline: none;
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  background: rgb(255,0,0);
+background: linear-gradient(90deg, rgba(255,0,0,1) 0%, rgba(255,255,0,1) 50%, rgba(0,255,0,1) 100%);
+
+  height: 4px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  border: 1px solid;
+  border-color: #8e8e93;
+  height: 30px;
+  width: 7px;
+  max-width: 80px;
+  position: relative;
+  bottom: 13px;
+  background-color: #f9f9f9;
+
+
+  -webkit-transition: border 1000ms ease;
+  transition: border 1000ms ease;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  background-color: red;
+  border-radius: 6px;
+}
+
+    </style>
+
+<script>
+
+</script>
+
+
+
+
+
+
+
+</head>
+<body>
+<div class="container">
+
+
+            <div class="card">
+                <div class="card-body">
+                    <h4 class="card-title">
+                        <strong>Privacy Project User Study Dashboard</strong>
+                        <br/>
+                    </h4>
+                    <h6 class="text-secondary card-subtitle mb-2">Instructions</h6>
+                    <p class="card-text">The purpose of this user study is to evaluate how well our system can determine
+                        your view towards various entities (people, places, organizations, etc.) based on the articles
+                        you read. Our system will periodically extract articles from your history and process them
+                        locally on your computer (we do not receive any of this information). The results will gradually
+                        appear in the table below. Please send us a survey each week for the duration of the study period. You can do so by
+                        pressing the "start survey" button below.</p>
+                    <a href="/survey.html" class="btn btn btn-primary">Start Survey</a><br/><br/>
+                    <h6 class="text-secondary card-subtitle mb-2">System Information</h6>
+
+                    <table class="table">
+                        <thead>
+                        <tr>
+                            <th scope="col">Status</th>
+                            <th scope="col">Current Articles Processed</th>
+                            <th scope="col">Total Articles Processed</th>
+                            <th scope="col">Last Process Time</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr>
+                            <td>$STATUS</td>
+                            <td>$CURRENT_ARTICLES</td>
+                            <td>$TOTAL_ARTICLES</td>
+                            <td>$LAST_TIME</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                    <h6 class="text-secondary card-subtitle mb-2">System Results</h6>
+
+                    <table class="table">
+                        <thead>
+                        <tr>
+                            <th scope="col">#</th>
+                            <th scope="col">Entity Name</th>
+                            <th scope="col">Frequency</th>
+                            <th scope="col">Sentiment</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+
+                        $ROWS
+
+
+                        </tbody>
+                    </table>
+
+                </div>
+            </div>
+
+</div>
+</body>
+</html>
