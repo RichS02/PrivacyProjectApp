@@ -482,22 +482,25 @@ def runSystem():
 
 
 def openBrowser(port):
+    chrome_path = 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe %s' if os.name == 'nt' else 'open -a /Applications/Google\ Chrome.app %s'
     if not isinstance(port, int):
         raise ValueError('Invalid port')
     log("Open Browser with available: "+str(webbrowser._browsers))
     url = "http://localhost:"+str(port)
     try:
-        if not webbrowser.get('open -a /Applications/Google\ Chrome.app %s').open(url):
+        if not webbrowser.get(chrome_path).open(url):
             log("Error opening chrome browser. Trying generic.")
             webbrowser.open(url)
     except:
         log("Error opening browser. Trying again with generic.")
         webbrowser.open(url)
 
-
 def button_action():
-    print("******************************************action " + str(threading.get_ident()))
-    openBrowser(port)
+    #Run this in background thread to prevent blocking the interface (b/c for some reason on windows it blocks)
+    log("Launch browser")
+    tr = threading.Thread(target=openBrowser, args=[port])
+    tr.daemon = True  # This forces the child thread to exit whenever the parent (main) exits.
+    tr.start()
 
 def initGUI():
     log("Init GUI")
