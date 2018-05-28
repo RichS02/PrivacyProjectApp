@@ -16,7 +16,7 @@ There was a Mac issue with pyinstaller which can be fixed by following: https://
 
 
 
-#macOS Spec file
+# macOS Spec file
 ~~~~
 # -*- mode: python -*-
 
@@ -58,7 +58,7 @@ app = BUNDLE(coll,
              info_plist={'NSHighResolutionCapable': 'True'},)
 ~~~~
 
-#Windows Spec file
+# Windows Spec file
 ~~~~
 # -*- mode: python -*-
 
@@ -66,7 +66,7 @@ block_cipher = None
 
 
 a = Analysis(['main.py'],
-             pathex=['C:\\Users\\richs\\PycharmProjects\\PrivacyProjectApp'],
+             pathex=['C:\\Users\\<USER>\\PycharmProjects\\PrivacyProjectApp'],
              binaries=[],
              datas=[('res','res')],
              hiddenimports=["nltk.chunk.named_entity"],
