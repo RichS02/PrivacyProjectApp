@@ -241,11 +241,11 @@ class EntitySentimentAnalyzer:
                     # print('MERGED: ' + name1 + ' TO ' + name2)
                     matched = True
 
-            #if matched:
-                #entitiesToRemove.append(name1)  # currently match single names to ALL last names/first names.  We then delete it after done matching all.
+            if matched:
+                entitiesToRemove.append(name1)  # currently match single names to ALL last names/first names.  We then delete it after done matching all.
 
-        #for r in entitiesToRemove:
-            #entityTable.pop(r, None)
+        for r in entitiesToRemove:
+            entityTable.pop(r, None)
         #DON'T remove because when you incorrectly match there will be no single names to fallback on the test. See Michelle Obama case in ObamaPos7.txt
 
 

@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/css/bootstrap.min.css" integrity="sha384-9gVQ4dYFwwWSjIDZnLEWnxCjeSWFphJiwGPXr1jddIhOegiu1FwO5qRGvFXOdJZ4" crossorigin="anonymous">
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/js/bootstrap.min.js" integrity="sha384-uefMccjFJAIv6A+rW+L4AHf99KvxDjWSu1z9VI8SKNVmz4sk7buKt/6v9KI65qnm" crossorigin="anonymous"></script>
+   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.0/css/bootstrap.min.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.0/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.0/js/bootstrap.min.js"></script>
     <meta charset="UTF-8">
     <title>Privacy Project User Study</title>
 
@@ -66,9 +68,11 @@ input.round[type=range]::-webkit-slider-thumb {
 .badge {
   font-size: 12px;
   font-weight: bold;
+  width: 120px;
   color: white;
   background-color: red;
   border-radius: 6px;
+  margin-left: 9px;
 }
 
     </style>
@@ -105,6 +109,7 @@ bgcolor = "";
     color = "white";
     bgcolor = "#FF0000";
     }
+
 element.parentElement.getElementsByClassName('badge')[0].innerHTML=str;
 element.parentElement.getElementsByClassName('badge')[0].style.backgroundColor = bgcolor;
 element.parentElement.getElementsByClassName('badge')[0].style.color = color;
@@ -114,9 +119,14 @@ element.parentElement.getElementsByClassName('badge')[0].style.color = color;
 function radioEvent(element) {
 slider = element.parentElement.parentElement.parentElement.parentElement.getElementsByClassName('customCorrection')[0];
 if (element.value === "B") {
-slider.style.visibility = "visible";
+slider.style.opacity = "1";
+slider.style.pointerEvents = "";
 } else {
-slider.style.visibility = "hidden";
+slider.style.opacity = "0.3";
+slider.style.pointerEvents = "none";
+rang = slider.getElementsByClassName('range')[0]
+rang.value = rang.dataset["customstartvalue"]
+updateTextInput(rang)
 }
 }
 
@@ -139,6 +149,10 @@ if (element.value > 80) {
 
 function submitAction() {
 elements = document.getElementsByClassName('entityRow')
+if (elements.length == 0) {
+alert("Error: Empty survey.")
+return
+}
 results = ""
 for (var i=0; i<elements.length; i++) {
 row = elements[i]
