@@ -10,14 +10,23 @@ except OSError as e:
 
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename=HOME_PATH+'/system.log',level=logging.WARNING)
 
+import threading
+uninstall_lock = threading.Lock()
+log_ignore_lock = threading.Lock()
+log_ignore = False
 def log(mes):
+    # Because even after shutting down the logger, it still will write and try to create a file.
+    with log_ignore_lock:
+        if log_ignore:
+            return
     print(str(mes))
     logging.warning(str(mes))
 
 log("- - - - SYSTEM STARTING - - - -")
 
 # Set the current working directory for python http server socket for front end.
-os.chdir(HOME_PATH)
+#os.chdir(HOME_PATH) # Note it makes the open browser sub process also use cwd which blocks uninstall
+
 
 # This is used for pyinstaller. We need to return a special path to application.
 def get_app_path():
@@ -54,6 +63,7 @@ import csv
 from langdetect import detect
 from hashlib import sha256
 
+
 log("Imports finished.")
 
 CHROME_HISTORY_SQLITE_FILE = "history"
@@ -72,6 +82,8 @@ last_process_time = None
 is_sleeping = False
 count = 0
 gray_list = []
+
+
 
 MAC_USER_AGENT_PATH = str(Path.home())+'/Library/LaunchAgents'
 MAC_USER_AGENT_ID = 'com.stony-brook.nlp.privacy-project-agent'
@@ -119,42 +131,74 @@ class UserData:
         self.urls = {}
         self.entities = {}
 
+
 class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
+    #We don't use CWD because it causes issues on windows when opening a browser because the sub process inherits CWD and then fails to uninstall that directory. Could also fix by modifying the browser sub process but this is easier.
+    def translate_path(self, path):
+        #path = http.server.SimpleHTTPRequestHandler.translate_path(self, path)
+        return HOME_PATH+path if path != '/thanks.html' else get_app_path()+'/res'+path
 
     def do_GET(self):
-        log("Get request: "+str(self.path))
+
         if self.path == '/':
             self.path = '/index.html'
         return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
     def do_POST(self):
-        log("Post request: " + str(self.path))
+
         len = int(self.headers.get('Content-Length'))
         body = self.rfile.read(len).decode('utf8',errors="ignore")
         if 'uninstall' in body:
-            uninstall()
-        if self.path == '/':
-            self.path = '/index.html'
+            log("Uninstalling")
+            self.path = '/thanks.html'
+
+            thread3 = threading.Thread(target=uninstall)
+            thread3.daemon = True
+            thread3.start()
+
         return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
-# Handle uninstalling safely.
+# Handles uninstalling safely.
 def uninstall():
-    try:
-        os.remove(HOME_PATH+"/version")
-        if os.name != 'nt':
-            os.remove(HOME_PATH + "/autorun.sh")
-        os.remove(HOME_PATH + "/system.log")
-        os.remove(HOME_PATH + "/user-data.bin")
-        os.remove(HOME_PATH + "/index.html")
-        os.remove(HOME_PATH + "/survey.html")
-        os.remove(HOME_PATH + "/history.db")
-        os.rmdir(HOME_PATH)
-        if os.name != 'nt':
-            os.remove(MAC_USER_AGENT_PATH + '/' + MAC_USER_AGENT_ID + '.plist')
-    except e:
-        pass
+    time.sleep(4) #Give some time for the request.
+    with log_ignore_lock:
+        global log_ignore
+        log_ignore = True
+    with uninstall_lock:
+        #try:
+        #    os.chdir(Path.home())  # Important, can't rmdir cwd on windows.
+        #except:
+        #    pass
 
-    os._exit(1)
+        files = ["/version","/user-data.bin","/index.html","/survey.html","/history.db","/system.log"]
+
+        if os.name != 'nt':
+            files.append("/autorun.sh")
+
+        try:
+            logging.shutdown()  # Closes the system.log
+        except:
+            pass
+
+        for file in files:
+            try:
+                os.remove(HOME_PATH + file)
+            except:
+                pass
+        try:
+            os.rmdir(HOME_PATH)
+        except:
+            pass
+
+        try:
+            if os.name != 'nt':
+                os.remove(MAC_USER_AGENT_PATH + '/' + MAC_USER_AGENT_ID + '.plist')
+            else:
+                os.remove(str(Path.home())+'\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\privacy-project.lnk')
+        except:
+            pass
+
+        os._exit(1)
 
 
 def getMergedEntities():
@@ -179,19 +223,7 @@ def getMergedEntities():
                 print("MERGED: "+uEntitiesCopy[i].name+" to "+uEntities[j].name)
                 match = True
 
-            '''if len(splitNamei) == 1 and len(splitNamej) > 1 and splitNamei[0].strip().lower() == splitNamej[0].strip().lower() and uEntitiesCopy[j].frequency >= uEntitiesCopy[i].frequency:
-                uEntities[j].score = (uEntities[j].score*float(uEntities[j].frequency) + uEntitiesCopy[i].score*float(uEntitiesCopy[i].frequency))/float(uEntities[j].frequency + uEntitiesCopy[i].frequency)
-                uEntities[j].frequency += uEntitiesCopy[i].frequency
-                uEntities[j].links = uEntities[j].links.union(uEntities[i].links)
-                #print("MERGED: "+uEntitiesCopy[i].name+" to "+uEntities[j].name)
-                match = True
 
-            if len(splitNamei) == 2 and len(splitNamej) > 2 and splitNamei[0].strip().lower() == splitNamej[0].strip().lower() and splitNamei[1].strip().lower() == splitNamej[-1].strip().lower():
-                uEntities[j].score = (uEntities[j].score*float(uEntities[j].frequency) + uEntitiesCopy[i].score*float(uEntitiesCopy[i].frequency))/float(uEntities[j].frequency + uEntitiesCopy[i].frequency)
-                uEntities[j].frequency += uEntitiesCopy[i].frequency
-                print("MERGED: "+uEntitiesCopy[i].name+" to "+uEntities[j].name)
-                uEntities[j].links = uEntities[j].links.union(uEntities[i].links)
-                match = True'''
 
         if match:
             entitiesToRemove.append(uEntitiesCopy[i].name)
@@ -379,7 +411,7 @@ def updateFrontend2():
     indexFile.close()
 
 def runServer():
-    print("******************************************B " + str(threading.get_ident()))
+
     log("running at port "+str(server.socket.getsockname()[1]))
     server.serve_forever()
 
@@ -455,75 +487,75 @@ def refresh():
         print("Skip because sleeping.")
         return
 
-    print("******************************************refresh" + str(threading.get_ident()))
-    log("Refresh")
-    is_sleeping = False
-    last_process_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    global userData
+    with uninstall_lock:
+        log("Refresh")
+        is_sleeping = False
+        last_process_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        global userData
 
-    copyChromeFile()
+        copyChromeFile()
 
-    userDataFile = None
+        userDataFile = None
 
-    userData = UserData()
-    error = False
-    if os.path.exists(USER_DATA):
-        try:
-            userDataFile = open(USER_DATA, 'rb')
-            userData = pickle.load(userDataFile)
+        userData = UserData()
+        error = False
+        if os.path.exists(USER_DATA):
+            try:
+                userDataFile = open(USER_DATA, 'rb')
+                userData = pickle.load(userDataFile)
 
-        except Exception as e:
-            log("ERROR - FAILED TO LOAD USER DATA FILE: "+str(e))
-            error = True
+            except Exception as e:
+                log("ERROR - FAILED TO LOAD USER DATA FILE: "+str(e))
+                error = True
 
-        if userDataFile != None:
-            userDataFile.close()
+            if userDataFile != None:
+                userDataFile.close()
 
-        if error:
-            os._exit(1)
-    db = sqlite3.connect(HISTORY_COPY, timeout=30)
-    cursor = db.cursor()
-    # Fetches top 6000 most recent URLs that are not hidden, have a view count. Further processing checks if the URLs are within the past year, and not blacklisted etc.
-    # DO NOT DO (AND urls.title != "") because sometimes Chrome does not give a title when it should and sometimes article titles will get removed or added at a later time. Strange behavior.
-    query = 'SELECT urls.url, urls.last_visit_time FROM urls WHERE urls.hidden = 0 AND urls.visit_count > 0 ORDER BY urls.last_visit_time DESC LIMIT 0,6000'
-    cursor.execute(query)
-    rows = [row for row in cursor.fetchall()]
+            if error:
+                os._exit(1)
+        db = sqlite3.connect(HISTORY_COPY, timeout=30)
+        cursor = db.cursor()
+        # Fetches top 6000 most recent URLs that are not hidden, have a view count. Further processing checks if the URLs are within the past year, and not blacklisted etc.
+        # DO NOT DO (AND urls.title != "") because sometimes Chrome does not give a title when it should and sometimes article titles will get removed or added at a later time. Strange behavior.
+        query = 'SELECT urls.url, urls.last_visit_time FROM urls WHERE urls.hidden = 0 AND urls.visit_count > 0 ORDER BY urls.last_visit_time DESC LIMIT 0,6000'
+        cursor.execute(query)
+        rows = [row for row in cursor.fetchall()]
 
-    db.close()
-    log("Extracted links from chrome db.")
-    for row in rows:
-        link = row[0]
-        link_time = row[1]
-        t1 = datetime.datetime(1601, 1, 1) + datetime.timedelta(microseconds=link_time)
-        t2 = datetime.datetime.now()
-        if (t2 - t1).total_seconds() > RECORD_TIME_LIMIT:
-            log("Stop fetching links because > year.")
-            break # Rows are in DESC order (oldest last) so no need to keep recording.
-        linkData = parse.urlsplit(link)
-        if linkData == None or linkData.hostname == None or linkData.path == None:
-            log("Skip, invalid link: "+str(link))
-            continue
-        # Small but effective.
-        link_path = linkData.path
-        if link_path.endswith(".png") or link_path.endswith(".jpg") or link_path.endswith(".gif") or link_path.endswith(".gifv"):
-            log("Skip, invalid link: " + str(link))
-            continue
+        db.close()
+        log("Extracted links from chrome db.")
+        for row in rows:
+            link = row[0]
+            link_time = row[1]
+            t1 = datetime.datetime(1601, 1, 1) + datetime.timedelta(microseconds=link_time)
+            t2 = datetime.datetime.now()
+            if (t2 - t1).total_seconds() > RECORD_TIME_LIMIT:
+                log("Stop fetching links because > year.")
+                break # Rows are in DESC order (oldest last) so no need to keep recording.
+            linkData = parse.urlsplit(link)
+            if linkData == None or linkData.hostname == None or linkData.path == None:
+                log("Skip, invalid link: "+str(link))
+                continue
+            # Small but effective.
+            link_path = linkData.path
+            if link_path.endswith(".png") or link_path.endswith(".jpg") or link_path.endswith(".gif") or link_path.endswith(".gifv"):
+                log("Skip, invalid link: " + str(link))
+                continue
 
-        hostname = linkData.hostname.lower()
-        hostnameTrim = hostname[len("www."):] if hostname.startswith("www.") else hostname
-        if isBlacklisted(hostnameTrim):
-            #print("BLACKLISTED "+linkData.hostname.lower())
-            continue
+            hostname = linkData.hostname.lower()
+            hostnameTrim = hostname[len("www."):] if hostname.startswith("www.") else hostname
+            if isBlacklisted(hostnameTrim):
+                #print("BLACKLISTED "+linkData.hostname.lower())
+                continue
 
-        if link.lower() in userData.urls:
-            continue
+            if link.lower() in userData.urls:
+                continue
 
-        isGray = isGraylisted(hostnameTrim)
-        userData.urls[link.lower()] = UserDataURL(link, False, isGray, link_time)
+            isGray = isGraylisted(hostnameTrim)
+            userData.urls[link.lower()] = UserDataURL(link, False, isGray, link_time)
 
-    count = 0
-    log("Links pre-processed.")
-    updateFrontend()
+        count = 0
+        log("Links pre-processed.")
+        updateFrontend()
 
 
 
@@ -534,8 +566,9 @@ def refresh():
             continue
 
         if count%4 == 0:
-            updateFrontend()
-            save()
+            with uninstall_lock:
+                updateFrontend()
+                save()
         if count >= 100:
             break
 
@@ -603,14 +636,15 @@ def refresh():
             continue
 
     is_sleeping = True
-    updateFrontend()
-    save()
+    with uninstall_lock:
+        updateFrontend()
+        save()
     log("Done refreshing. Sleeping for 12 hours")
 
     old_time = time.time()
 
 def runSystem():
-    print("******************************************run system " + str(threading.get_ident()))
+
     log('Core loop')
     while True:
         try:
@@ -681,7 +715,18 @@ def initGUI():
 
 def writeAutostartupFiles():
     if os.name == 'nt':
-        print("TODO") #TODO
+        autostart__path_folder = str(Path.home())+'\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'
+        path_to_exe = get_app_path()+'\privacy-project.exe'
+
+        from win32com.client import Dispatch
+
+        shell = Dispatch('WScript.Shell')
+        shortcut = shell.CreateShortCut(autostart__path_folder+'\privacy-project.lnk')
+        shortcut.Targetpath = path_to_exe
+        shortcut.WorkingDirectory = autostart__path_folder
+        shortcut.IconLocation = path_to_exe
+        shortcut.save()
+
     else:
         with open(MAC_USER_AGENT_PATH + '/' + MAC_USER_AGENT_ID + '.plist', "w") as ver_file:
             ver_file.write(MAC_AGENT_XML)
@@ -717,20 +762,18 @@ if __name__ == '__main__':
     with open(get_app_path()+'/res/gray_list.csv','r') as gray_list_file:
         gray_list = [x[0] for x in list(list(csv.reader(gray_list_file))) if len(x) > 0]
 
-
     import nltk
     nltk.data.path.append(get_app_path()+'/res/nltk_data')
     entitySentimentAnalyzer = EntitySentimentAnalyzer()
 
     thread2 = threading.Thread(target=runSystem)
-    print("******************************************S2 " + str(threading.get_ident()))
     thread2.daemon = True
     thread2.start()
 
     thread = threading.Thread(target=runServer)
-    print("******************************************S1 " + str(threading.get_ident()))
     thread.daemon = True  # This forces the child thread to exit whenever the parent (main) exits.
     thread.start()
+
 
     initGUI()
     log("- - - - QUIT - - - -")
