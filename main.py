@@ -60,7 +60,7 @@ import traceback
 import datetime
 import frontend
 import csv
-from langdetect import detect
+from res.langdetect import detect
 from hashlib import sha256
 
 
@@ -740,40 +740,46 @@ def writeAutostartupFiles():
 
 if __name__ == '__main__':
     log("- - - - MAIN START - - - -")
-
-    port = None
-
     try:
-        me = SingleInstance()
-    except SingleInstanceException as e:
-        log('NOT RUNNING BECAUSE ALREADY RUNNING!')
-        exit(1)
+
+        port = None
+
+        try:
+            me = SingleInstance()
+        except SingleInstanceException as e:
+            log('NOT RUNNING BECAUSE ALREADY RUNNING!')
+            exit(1)
 
 
 
-    server = socketserver.TCPServer(('localhost', 0), MyRequestHandler)
-    port = server.socket.getsockname()[1]
-    log("Socket created.")
-    with open(HOME_PATH+"/version", "w") as ver_file:
-        ver_file.write(str("1"))
+        server = socketserver.TCPServer(('localhost', 0), MyRequestHandler)
+        port = server.socket.getsockname()[1]
+        log("Socket created.")
+        with open(HOME_PATH+"/version", "w") as ver_file:
+            ver_file.write(str("1"))
 
-    writeAutostartupFiles()
-    log("Auto-startup files created.")
-    with open(get_app_path()+'/res/gray_list.csv','r') as gray_list_file:
-        gray_list = [x[0] for x in list(list(csv.reader(gray_list_file))) if len(x) > 0]
+        writeAutostartupFiles()
+        log("Auto-startup files created.")
+        with open(get_app_path()+'/res/gray_list.csv','r',encoding='UTF-8') as gray_list_file: #utf-8 required!
+            gray_list = [x[0] for x in list(csv.reader(gray_list_file)) if len(x) > 0]
 
-    import nltk
-    nltk.data.path.append(get_app_path()+'/res/nltk_data')
-    entitySentimentAnalyzer = EntitySentimentAnalyzer()
+        import nltk
+        nltk.data.path.append(get_app_path()+'/res/nltk_data')
+        entitySentimentAnalyzer = EntitySentimentAnalyzer()
 
-    thread2 = threading.Thread(target=runSystem)
-    thread2.daemon = True
-    thread2.start()
+        thread2 = threading.Thread(target=runSystem)
+        thread2.daemon = True
+        thread2.start()
 
-    thread = threading.Thread(target=runServer)
-    thread.daemon = True  # This forces the child thread to exit whenever the parent (main) exits.
-    thread.start()
+        thread = threading.Thread(target=runServer)
+        thread.daemon = True  # This forces the child thread to exit whenever the parent (main) exits.
+        thread.start()
 
 
-    initGUI()
+        initGUI()
+    except Exception as exp:
+        log("************************************* EXCEPTION IN CORE THREAD *************************************")
+        log("EXCEPTION = " + str(exp))
+        log(traceback.format_exc())
+        os._exit(1)
     log("- - - - QUIT - - - -")
