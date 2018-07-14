@@ -118,6 +118,13 @@ element.parentElement.getElementsByClassName('badge')[0].style.color = color;
 
 function radioEvent(element) {
 slider = element.parentElement.parentElement.parentElement.parentElement.getElementsByClassName('customCorrection')[0];
+gParent = element.parentNode.parentNode.parentNode;
+rad1 = gParent.getElementsByClassName("inputRad")[0];
+rad2 = gParent.getElementsByClassName("inputRad")[1];
+rad3 = gParent.getElementsByClassName("inputRad")[2];
+rad1.parentNode.style.color = "Black";
+rad2.parentNode.style.color = "Black";
+rad3.parentNode.style.color = "Black";
 if (element.value === "B") {
 slider.style.opacity = "1";
 slider.style.pointerEvents = "";
@@ -148,6 +155,7 @@ if (element.value > 80) {
 
 
 function submitAction() {
+var err = false;
 elements = document.getElementsByClassName('entityRow')
 if (elements.length == 0) {
 alert("Error: Empty survey.")
@@ -169,12 +177,18 @@ results += getStrFromVal(predictedSlider)+"-"+getStrFromVal(correctionSlider)
 } else if (rad3.checked) {
 results += getStrFromVal(predictedSlider)+"-"+"x"
 } else {
-alert("Error: Please provide a response for each entity.")
-return
+err = true;
+rad1.parentNode.style.color = "Red";
+rad2.parentNode.style.color = "Red";
+rad3.parentNode.style.color = "Red";
 }
 results += ","
 }
 
+if (err) {
+alert("Error: Please provide a response for each entity.")
+return
+}
 location.href = "https://docs.google.com/forms/d/e/1FAIpQLSfNF-x2fsf0BTpqlrlHxrHxRRjxgxTV4vdsewgENxzJuYBhsA/viewform?usp=pp_url&entry.1537839056="+results;
 }
 </script>

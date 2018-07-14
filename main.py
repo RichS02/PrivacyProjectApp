@@ -1,7 +1,8 @@
 import logging
+import project_constants
 from pathlib import Path
 import os, errno
-HOME_PATH = str(Path.home())+"/com.stony-brook.nlp.privacy-project"
+HOME_PATH = project_constants.HOME_PATH
 try:
     os.makedirs(HOME_PATH)
 except OSError as e:
@@ -62,6 +63,8 @@ import frontend
 import csv
 from res.langdetect import detect
 from hashlib import sha256
+import shutil
+import json
 
 
 log("Imports finished.")
@@ -72,7 +75,7 @@ USER_DATA = HOME_PATH+"/user-data.bin"
 INDEX = HOME_PATH+"/index.html"
 SURVEY = HOME_PATH+"/survey.html"
 ROW_URL = 0
-CAP = 100
+CAP = 500
 NEUTRAL_THRESHOLD_UPPER = 0.114
 NEUTRAL_THRESHOLD_LOWER = -0.062
 RECORD_TIME_LIMIT = 31540000  # Seconds
@@ -82,6 +85,7 @@ last_process_time = None
 is_sleeping = False
 count = 0
 gray_list = []
+start_date = None
 
 
 
@@ -170,7 +174,7 @@ def uninstall():
         #except:
         #    pass
 
-        files = ["/version","/user-data.bin","/index.html","/survey.html","/history.db","/system.log"]
+        files = ["/.DS_Store","/version","/user-data.bin","/index.html","/survey.html","/history.db","/system.log"]
 
         if os.name != 'nt':
             files.append("/autorun.sh")
@@ -185,6 +189,13 @@ def uninstall():
                 os.remove(HOME_PATH + file)
             except:
                 pass
+
+        #Remove newspaper subfolder.
+        try:
+            shutil.rmtree(HOME_PATH+"/.newspaper_scraper")
+        except:
+            pass
+
         try:
             os.rmdir(HOME_PATH)
         except:
@@ -245,7 +256,14 @@ def getMergedEntities():
     return sorted(final, key=lambda x: x[0].getFrequency()+x[1], reverse=True)[:30]
 
 
-
+def getNextSurveyDate():
+    now = datetime.datetime.now()
+    start = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+    delta = now - start
+    step = delta.days//7 + 1
+    addition = datetime.timedelta(days=7*step)
+    final = start+addition
+    return final.strftime("%b %d, %Y")
 
 def updateFrontend():
     log("Update frontend.")
@@ -261,7 +279,7 @@ def updateFrontend():
     htmlTemplateFile = open(get_app_path()+"/res/index_template.html", 'r')
     htmlString = htmlTemplateFile.read()
     htmlTemplateFile.close()
-
+    htmlString = htmlString.replace("$DATE", getNextSurveyDate())
     htmlString = htmlString.replace("$STATUS", "Sleeping" if is_sleeping else "Processing")
     htmlString = htmlString.replace("$CURRENT_ARTICLES", str(count)+"/"+str(CAP))
     htmlString = htmlString.replace("$TOTAL_ARTICLES", str(p_processed) + "/" + str(len(p_urls)))
@@ -569,7 +587,7 @@ def refresh():
             with uninstall_lock:
                 updateFrontend()
                 save()
-        if count >= 100:
+        if count >= CAP:
             break
 
 
@@ -736,6 +754,40 @@ def writeAutostartupFiles():
 
         os.chmod(HOME_PATH + "/autorun.sh", 0o744)
 
+# TODO: Remember to handle version if ever installing a new version with the previous installed to prevent using old data file.
+def writeVersionFile():
+    global start_date
+    #datetime.datetime.now()
+
+    #First try to read and parse existing file. If it fails, it means there was no parsable file.
+    try:
+        with open(HOME_PATH + "/version", "rb") as ver_file:
+            content = json.load(ver_file)
+            if not isinstance(content,dict):
+                raise ValueError("Failed to parse json.")
+            if not "version" in content:
+                raise ValueError("Failed to parse json.")
+            ver = content["version"]
+            if not isinstance(ver,int):
+                raise ValueError("Failed to parse json.")
+
+            #TODO: The user is installing with an old version already installed. Handle appropriately for the new ver.
+            #TODO: It probably makes sense to just not load the data file and create a new version file.
+            if ver != project_constants.VERSION_NUM:
+                log("**** WARNING: Old version previously installed. ****")
+                # Throw error which will create a new version file. Old data will remain.
+                raise ValueError("Old version file.")
+            else: # Read data.
+
+                start_date = content["start_date"]
+
+    except:
+        log("Failed to open and parse json. So creating a new install.")
+        start_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        content = {"version":project_constants.VERSION_NUM,"start_date":start_date}
+        with open(HOME_PATH + "/version", "w") as ver_file:
+            json.dump(content, ver_file, indent=1)
+
 
 
 if __name__ == '__main__':
@@ -755,8 +807,8 @@ if __name__ == '__main__':
         server = socketserver.TCPServer(('localhost', 0), MyRequestHandler)
         port = server.socket.getsockname()[1]
         log("Socket created.")
-        with open(HOME_PATH+"/version", "w") as ver_file:
-            ver_file.write(str("1"))
+        writeVersionFile()
+        log("Version file created.")
 
         writeAutostartupFiles()
         log("Auto-startup files created.")

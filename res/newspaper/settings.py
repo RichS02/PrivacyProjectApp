@@ -10,7 +10,7 @@ __copyright__ = 'Copyright 2014, Lucas Ou-Yang'
 
 import logging
 import os
-
+import project_constants
 from http.cookiejar import CookieJar as cj
 
 from .version import __version__
@@ -31,7 +31,12 @@ NLP_STOPWORDS_EN = os.path.join(
 
 DATA_DIRECTORY = '.newspaper_scraper'
 
-TOP_DIRECTORY = os.path.join(os.path.expanduser("~"), DATA_DIRECTORY)
+#--- CUSTOM CHANGES BELOW ---
+#TOP_DIRECTORY = os.path.join(os.path.expanduser("~"), DATA_DIRECTORY)
+#if not os.path.exists(TOP_DIRECTORY):
+#    os.mkdir(TOP_DIRECTORY)
+#CHANGE TO MAKE NEWSPAPER STORE ITS DATA IN OUR FOLDER INSTEAD
+TOP_DIRECTORY = os.path.join(project_constants.HOME_PATH, DATA_DIRECTORY)
 if not os.path.exists(TOP_DIRECTORY):
     os.mkdir(TOP_DIRECTORY)
 
