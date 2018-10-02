@@ -2,6 +2,7 @@ import logging
 import project_constants
 from pathlib import Path
 import os, errno
+#todo: __name__ main check
 HOME_PATH = project_constants.HOME_PATH
 try:
     os.makedirs(HOME_PATH)
@@ -56,6 +57,7 @@ import threading
 from singleton import *
 import webbrowser
 from tkinter import *
+from tkinter import messagebox
 import sys
 import traceback
 import datetime
@@ -85,8 +87,9 @@ last_process_time = None
 is_sleeping = False
 count = 0
 gray_list = []
+persons_dict = {}
 start_date = None
-
+reset_user_data = False #Used to set when changing versions and want to wipe data.
 
 
 MAC_USER_AGENT_PATH = str(Path.home())+'/Library/LaunchAgents'
@@ -106,13 +109,15 @@ MAC_AGENT_XML = '<?xml version="1.0" encoding="UTF-8"?>\
 </dict>\
 </plist>'
 
-MAC_AUTORUN_SCRIPT = '#!/bin/sh\nopen -a "privacy-project-0.8.app"'
+MAC_AUTORUN_SCRIPT = '#!/bin/sh\nopen -a "privacy-project-V'+str(project_constants.VERSION_NUM)+'.app"'
 
 class UserDataEntity:
     def __init__(self, name):
         self.name = name
         self.labels = [] #-1 neg , 0 neu, 1 pos
         self.links = [] #Aligns with labels.
+        self.dbpedia_data = None # [id, name, desc]
+
 
     def getAvgLabelScore(self):
         return sum(self.labels)/float(len(self.labels))
@@ -209,29 +214,37 @@ def uninstall():
         except:
             pass
 
-        os._exit(1)
+        os._exit(0)
 
+
+def getLast(str):
+    parts = str.split(' ')
+    if len(parts) < 2:
+        return ''
+    return parts[-1]
 
 def getMergedEntities():
     uEntities = copy.deepcopy(list(userData.entities.values()))
-    uEntitiesCopy = copy.deepcopy(uEntities) #Very important to use copy to prevent double counting merges. todo Though this could be fixed by limiting merges.
+    uEntitiesCopy = copy.deepcopy(uEntities) #copy to prevent double counting merges. todo Though this could be fixed by limiting merges.
     entitiesToRemove = []
     final = [] # [entity,boost] (2x weight to entity frequency if in gray list so it has greater chance of appearing in top 30)
     for i in range(0,len(uEntitiesCopy)):
+        #continue
         match = False
         for j in range(0, len(uEntitiesCopy)):
             if uEntitiesCopy[i].name == uEntitiesCopy[j]:
                 continue
+            if uEntitiesCopy[j].dbpedia_data is None: #Check against dbpedia entities only.
+                continue
 
             splitNamei = uEntitiesCopy[i].name.split()
-            splitNamej = uEntitiesCopy[j].name.split()
+            splitNamej = uEntitiesCopy[j].dbpedia_data[1].split() #Full entity name.
 
-            # todo: maybe Merge based on highest. Merge Obama to only one entity with the highest frequency. So Obama -> Barack Obama not Window Obama.
-            if len(splitNamei) == 1 and len(splitNamej) > 1 and splitNamei[0].strip().lower() == splitNamej[-1].strip().lower() and uEntitiesCopy[j].getFrequency() >= uEntitiesCopy[i].getFrequency():
-                #uEntities[j].score = (uEntities[j].score*float(uEntities[j].frequency) + uEntitiesCopy[i].score*float(uEntitiesCopy[i].frequency))/float(uEntities[j].frequency + uEntitiesCopy[i].frequency)
+            #maybe merge based on highest freq
+            if len(splitNamei) == 1 and len(splitNamej) > 1 and splitNamei[0].strip().lower() == splitNamej[-1].strip().lower(): #and uEntitiesCopy[j].getFrequency() >= uEntitiesCopy[i].getFrequency():
                 uEntities[j].labels += uEntities[i].labels
                 uEntities[j].links += uEntities[i].links
-                print("MERGED: "+uEntitiesCopy[i].name+" to "+uEntities[j].name)
+                #print("MERGED: "+uEntitiesCopy[i].name+" to "+uEntities[j].name)
                 match = True
 
 
@@ -241,7 +254,7 @@ def getMergedEntities():
 
 
     for e in uEntities:
-        if e.name not in entitiesToRemove:
+        if e.name not in entitiesToRemove and e.dbpedia_data is not None: #filter entities with db_data
             final.append([e,0])
         #else:
             #print("Ignoring "+e.name)
@@ -261,7 +274,22 @@ def getNextSurveyDate():
     start = datetime.datetime.strptime(start_date, "%Y-%m-%d")
     delta = now - start
     step = delta.days//7 + 1
+    if step >= 5: #4 weeks pass
+        return None
     addition = datetime.timedelta(days=7*step)
+    final = start+addition
+    return final.strftime("%b %d, %Y")
+
+def getLastSurveyDate():
+    now = datetime.datetime.now()
+    start = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+    delta = now - start
+    step = delta.days//7 + 1
+    if step == 1:
+        return None
+    if step > 5:
+        step = 5 #cap to last week
+    addition = datetime.timedelta(days=7*(step-1))
     final = start+addition
     return final.strftime("%b %d, %Y")
 
@@ -279,7 +307,18 @@ def updateFrontend():
     htmlTemplateFile = open(get_app_path()+"/res/index_template.html", 'r')
     htmlString = htmlTemplateFile.read()
     htmlTemplateFile.close()
-    htmlString = htmlString.replace("$DATE", getNextSurveyDate())
+    #todo: optimize
+    nextSurvDateStr = getNextSurveyDate()
+    lastSurvDateStr = getLastSurveyDate()
+    dateString1 = ''
+    dateString2 = 'You have no more surveys remaining, you may now uninstall the user study'
+    if nextSurvDateStr is not None:
+        dateString2 = 'Please submit your next survey on or after '+nextSurvDateStr
+    if lastSurvDateStr is not None:
+        dateString1 = 'Your last survey was due on or after '+lastSurvDateStr + '. <br>'
+
+    dateString = '<br>'+dateString1+dateString2
+    htmlString = htmlString.replace("$DATE", dateString)
     htmlString = htmlString.replace("$STATUS", "Sleeping" if is_sleeping else "Processing")
     htmlString = htmlString.replace("$CURRENT_ARTICLES", str(count)+"/"+str(CAP))
     htmlString = htmlString.replace("$TOTAL_ARTICLES", str(p_processed) + "/" + str(len(p_urls)))
@@ -328,12 +367,15 @@ def updateFrontend():
             label = "Negative"
             color = "#FF0000;"
 
+        #todo:
+        desc = entity.dbpedia_data[2]
+
         leftLabel = '<strong style="color: rgba(240,0,0,1); position: relative; top: 1px; left:-4px;  font-size: 9px;">N</strong>'
         rightLabel = '<strong style="color: rgba(0,200,0,1); position: relative; top: 1px; left:4px;  font-size: 9px;">P</strong>'
 
         rowStr = '<tr>\
                                     <th scope="row">' + str(i + 1) + '</th>\
-                                    <td>' + entity.name + frontend.popoverWithLinks(entity.links,i) +'</td>\
+                                    <td>' + '<span data-toggle="tooltip" data-placement="right" title="'+desc+'">'+entity.name+'</span>' + frontend.popoverWithLinks(entity.links,i) +'</td>\
                                     <td>' + str(entity.getFrequency()+boost) + '</td>\
                                     <td>\
                                         <div><span class="badge" style="background-color: '+color+'">'+label+'</span><br><br>\
@@ -409,12 +451,17 @@ def updateFrontend2():
             label = "Negative"
             color = "#FF0000;"
 
+        #todo: left off here
+        sent_counts = [0,0,0] #neg, neu, pos
+        for sent_label in entity.labels:
+            sent_counts[int(sent_label)+1] += 1
 
         leftLabel = '<strong style="color: rgba(240,0,0,1); position: relative; top: -6px; left:-4px;  font-size: 9px;">N</strong>'
         rightLabel = '<strong style="color: rgba(0,200,0,1); position: relative; top: -6px; left:4px;  font-size: 9px;">P</strong>'
         rowStr ='<tr class="entityRow">' \
                 '<th scope="row">' + str(i + 1) + '</th>'\
                 '<td>' + entity.name + '</td>' \
+                '<td class="sent_counts" style="display: none;">' + str(sent_counts) + '</td>'\
                 '<td>'+' <div> <span class ="badge" style="background-color: ' + color + '"> ' + label + ' </span> <br> <br> '+leftLabel+'<input type="range" min="0" max="100" value="' + str(scorePercentage) + '" step="1" list="steplist" class ="range round" onload="updateTextInput(this);" oninput="updateTextInput(this);" style="pointer-events: none;" disabled/> '+rightLabel+' <datalist id="steplist"><option>10</option><option>30</option><option>50</option><option>70</option><option>90</option></datalist> </div> </td>' \
                 '<td><div class="radio"><label><input class = "inputRad" type="radio" value = "A" name="rad'+str(i)+'" onchange="radioEvent(this);"> Agree</label></div>' \
                 '<div class="radio"><label><input class = "inputRad" type="radio" value = "B" name="rad'+str(i)+'" onchange="radioEvent(this);"> Disagree (Please correct it)</label></div>' \
@@ -500,9 +547,9 @@ def isGraylisted(host):
 
 
 def refresh():
-    global old_time, last_process_time, is_sleeping, count
+    global old_time, last_process_time, is_sleeping, count, persons_dict, reset_user_data
     if old_time != None and time.time() - old_time < 60*60*12:  # Every 12 hours.
-        print("Skip because sleeping.")
+        #print("Skip because sleeping.")
         return
 
     with uninstall_lock:
@@ -517,7 +564,7 @@ def refresh():
 
         userData = UserData()
         error = False
-        if os.path.exists(USER_DATA):
+        if reset_user_data is False and os.path.exists(USER_DATA):
             try:
                 userDataFile = open(USER_DATA, 'rb')
                 userData = pickle.load(userDataFile)
@@ -531,6 +578,7 @@ def refresh():
 
             if error:
                 os._exit(1)
+        reset_user_data = False
         db = sqlite3.connect(HISTORY_COPY, timeout=30)
         cursor = db.cursor()
         # Fetches top 6000 most recent URLs that are not hidden, have a view count. Further processing checks if the URLs are within the past year, and not blacklisted etc.
@@ -635,9 +683,48 @@ def refresh():
 
 
             entitySentiments = entitySentimentAnalyzer.analyze(document)[:5] #todo: We pick top 5 from article. Better to use title for advantage.!
+
             for entitySentiment in entitySentiments:
                 nameKey = entitySentiment.name.lower()
                 bucketScore = float(-1.0 if entitySentiment.score < NEUTRAL_THRESHOLD_LOWER else (1.0 if entitySentiment.score > NEUTRAL_THRESHOLD_UPPER else 0.0))
+                d = None
+                if nameKey in persons_dict:
+                    d = persons_dict[nameKey]
+                else:
+                    # print('UNKNOWN ENTITY: ' + nameKey)
+                    parts = nameKey.split(' ')
+                    if len(parts) >= 2:
+                        nameKeyTmp = parts[0] + ' ' + parts[-1]
+                        firstKeyTmp = parts[0]
+                        lastKeyTmp = parts[-1]
+                        if nameKeyTmp in persons_dict:
+                            nameKey = nameKeyTmp
+                            d = persons_dict[nameKey]
+                        elif firstKeyTmp in persons_dict and (getLast(persons_dict[firstKeyTmp][0]).lower() == lastKeyTmp or getLast(persons_dict[firstKeyTmp][0]) == ''):
+                            nameKey = firstKeyTmp
+                            d = persons_dict[firstKeyTmp]
+                        elif lastKeyTmp in persons_dict and (persons_dict[lastKeyTmp][0].lower().split(' ')[0] == firstKeyTmp):
+                            nameKey = lastKeyTmp
+                            d = persons_dict[lastKeyTmp]
+                        #else:
+                            #print('Ignoring UNKNOWN ENTITY: ' + nameKey)
+
+                    #elif len(parts) == 1:
+                        # Singular names not in the db, will be linked to dbpedia entities.
+                        #print('Ignoring UNKNOWN ENTITY: ' + nameKey)
+                    #else:
+                        #print('Ignoring UNKNOWN ENTITY: ' + nameKey)
+
+                # Assertion
+                if nameKey not in persons_dict or d is None:
+                    db_data = None
+                else:
+                    if d[0].startswith('_'):  # alias
+                        nameKey = d[0][1:]
+                        d = persons_dict[nameKey]
+                        #print('Found ALIAS to ' + nameKey)
+
+                    db_data = [nameKey, d[0], d[1]]
 
                 if nameKey in userData.entities:
                     userEntity = userData.entities[nameKey]
@@ -647,6 +734,7 @@ def refresh():
                     userData.entities[nameKey] = UserDataEntity(entitySentiment.name)
                     userData.entities[nameKey].labels.append(bucketScore)
                     userData.entities[nameKey].links.append(url.url)
+                    userData.entities[nameKey].dbpedia_data = db_data
 
 
         except Exception as e:
@@ -701,12 +789,20 @@ def disable_event():
     global window
     window.wm_state('iconic')
 
+def quit_action():
+    answer = messagebox.askyesno("WARNING", "WARNING: ARE YOU SURE YOU WANT TO QUIT?\n\nThe user study will stop. You can resume"
+                                            " the study by running the application again. If you are looking to completely uninstall, "
+                                            "select the 'uninstall' button in the dashboard.")
+    if answer:
+        with uninstall_lock:
+            log('USER CHOSE TO QUIT THE APPLICATION')
+            os._exit(0)
 
 def initGUI():
     global window
     log("Init GUI")
     window = Tk()
-
+    window.config(menu=Menu(window))
 
 
 
@@ -714,18 +810,22 @@ def initGUI():
     window.protocol("WM_DELETE_WINDOW", disable_event)
     m = Message(window,
                 text="Welcome to the user study. This application must remain open for the system to work. You may "
-                     "minimize it but do not close it or the system will stop. If you close it, simply launch "
+                     "minimize it but do not quit it or the system will stop. If you quit it, simply launch "
                      "the application again and the system will resume. \nYou can press the \"Open Dashboard\" button at any time to "
-                     "start a survey or view more information about the system. Please complete a survey once a week for the duration of the study.", width=495, justify=CENTER)
-    window.geometry('500x200')
+                     "start a survey or view more information about the system. Please complete a survey each week for one month.", width=495, justify=CENTER)
+    window.geometry('600x200')
     window.resizable(False, False)
     m.pack()
 
-    m.grid(column=0, row=0)
+    m.grid(column=1, row=1)
 
     btn = Button(window, text="Open Dashboard", command=button_action)
 
-    btn.grid(column=0, row=1)
+    btn.grid(column=1, row=2)
+
+    quit_btn = Button(window, text="Quit", command=quit_action)
+
+    quit_btn.grid(column=0, row=0)
 
     log("GUI Done")
 
@@ -756,7 +856,7 @@ def writeAutostartupFiles():
 
 # TODO: Remember to handle version if ever installing a new version with the previous installed to prevent using old data file.
 def writeVersionFile():
-    global start_date
+    global start_date, reset_user_data
     #datetime.datetime.now()
 
     #First try to read and parse existing file. If it fails, it means there was no parsable file.
@@ -784,6 +884,7 @@ def writeVersionFile():
     except:
         log("Failed to open and parse json. So creating a new install.")
         start_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        reset_user_data = True #todo: Important, currently always wiping data when version files fails (new install)
         content = {"version":project_constants.VERSION_NUM,"start_date":start_date}
         with open(HOME_PATH + "/version", "w") as ver_file:
             json.dump(content, ver_file, indent=1)
@@ -814,6 +915,9 @@ if __name__ == '__main__':
         log("Auto-startup files created.")
         with open(get_app_path()+'/res/gray_list.csv','r',encoding='UTF-8') as gray_list_file: #utf-8 required!
             gray_list = [x[0] for x in list(csv.reader(gray_list_file)) if len(x) > 0]
+
+        with open(get_app_path()+'/res/dbpedia_persons.json', encoding='utf-8') as file:
+            persons_dict = json.load(file)
 
         import nltk
         nltk.data.path.append(get_app_path()+'/res/nltk_data')

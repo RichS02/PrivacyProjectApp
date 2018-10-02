@@ -156,24 +156,26 @@ if (element.value > 80) {
 
 function submitAction() {
 var err = false;
-elements = document.getElementsByClassName('entityRow')
+var elements = document.getElementsByClassName('entityRow')
 if (elements.length == 0) {
 alert("Error: Empty survey.")
 return
 }
-results = ""
+var results = ""
 for (var i=0; i<elements.length; i++) {
-row = elements[i]
-predictedSlider = row.getElementsByClassName("range")[0]
-correctionSlider = row.getElementsByClassName("range")[1]
-rad1 = row.getElementsByClassName("inputRad")[0]
-rad2 = row.getElementsByClassName("inputRad")[1]
-rad3 = row.getElementsByClassName("inputRad")[2]
+var row = elements[i]
+var sent_counts = JSON.parse(row.getElementsByClassName("sent_counts")[0].innerHTML)
+
+var predictedSlider = row.getElementsByClassName("range")[0]
+var correctionSlider = row.getElementsByClassName("range")[1]
+var rad1 = row.getElementsByClassName("inputRad")[0]
+var rad2 = row.getElementsByClassName("inputRad")[1]
+var rad3 = row.getElementsByClassName("inputRad")[2]
 if (rad1.checked) {
-p = getStrFromVal(predictedSlider)
+var p = getStrFromVal(predictedSlider)
 results += p+"-"+p
 } else if (rad2.checked) {
-results += getStrFromVal(predictedSlider)+"-"+getStrFromVal(correctionSlider)
+results += getStrFromVal(predictedSlider)+"-x"+getStrFromVal(correctionSlider)
 } else if (rad3.checked) {
 results += getStrFromVal(predictedSlider)+"-"+"x"
 } else {
@@ -182,6 +184,7 @@ rad1.parentNode.style.color = "Red";
 rad2.parentNode.style.color = "Red";
 rad3.parentNode.style.color = "Red";
 }
+results += "-"+sent_counts[0]+"-"+sent_counts[1]+"-"+sent_counts[2]
 results += ","
 }
 
