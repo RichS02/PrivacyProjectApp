@@ -13,6 +13,7 @@ except OSError as e:
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename=HOME_PATH+'/system.log',level=logging.WARNING)
 
 import threading
+
 refresh_lock = threading.Lock()
 survey_lock = threading.Lock()
 log_ignore_lock = threading.Lock()
@@ -68,7 +69,14 @@ from res.langdetect import detect
 from hashlib import sha256
 import shutil
 import json
+import atexit
 
+#Clean exit.
+def exit_handler():
+    log('- - - - - - EXIT_HANDLER CALLED - - - - - -')
+    with refresh_lock:
+        save()
+atexit.register(exit_handler)
 
 log("Imports finished.")
 
@@ -92,6 +100,12 @@ persons_dict = {}
 start_date = None
 reset_user_data = False #Used to set when changing versions and want to wipe data.
 
+html_index = ''
+html_survey = ''
+
+template_index = ''
+template_survey = ''
+template_thanks = ''
 
 MAC_USER_AGENT_PATH = str(Path.home())+'/Library/LaunchAgents'
 MAC_USER_AGENT_ID = 'com.stony-brook.nlp.privacy-project-agent'
@@ -140,7 +154,7 @@ class UserData:
     def __init__(self):
         self.urls = {}
         self.entities = {}
-        self.survey_week = 1 # When get_survey_week() is > survey_week then prompt user to submit survey.
+        self.survey_week = 1  # When get_survey_week() is > survey_week then prompt user to submit survey.
 
 
 class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -152,17 +166,36 @@ class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
         return HOME_PATH+path if path != '/thanks.html' else get_app_path()+'/res'+path
 
     def end_headers(self):
-        print('TEST------------------------------TEST')
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
         http.server.SimpleHTTPRequestHandler.end_headers(self)
 
-    def do_GET(self):
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
 
-        if self.path == '/':
-            self.path = '/index.html'
-        return http.server.SimpleHTTPRequestHandler.do_GET(self)
+    def do_GET(self):
+        with refresh_lock:
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+
+            if self.path == '/survey.html':
+                updateFrontend2()
+                self.wfile.write(html_survey.encode('utf-8',errors="ignore"))
+            elif self.path == '/thanks.html':
+                self.wfile.write(template_thanks.encode('utf-8', errors="ignore"))
+            else:
+                updateFrontend()
+                self.wfile.write(html_index.encode('utf-8', errors="ignore"))
+
+    #def do_GET(self):
+    #
+    #    if self.path == '/':
+    #        self.path = '/index.html'
+    #    return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
     def do_POST(self):
 
@@ -172,10 +205,11 @@ class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
         if 'uninstall' in body:
             log("Uninstalling")
             self.path = '/thanks.html'
-
+            self.do_GET()
             thread3 = threading.Thread(target=uninstall)
             thread3.daemon = True
             thread3.start()
+            return
         elif 'results=' in body:
             log("User submitting survey.")
             results = body.replace('results=','')
@@ -187,11 +221,8 @@ class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
                 with survey_lock:
                     global user_survey_week
                     user_survey_week = get_survey_week()
-                updateFrontend()
                 save()
             return
-
-        return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
 # Handles uninstalling safely.
 def uninstall():
@@ -205,7 +236,7 @@ def uninstall():
         #except:
         #    pass
 
-        files = ["/.DS_Store","/version","/user-data.bin","/index.html","/survey.html","/history.db","/system.log"]
+        files = ["/.DS_Store","/version","/user-data.bin","/history.db","/system.log"]
 
         if os.name != 'nt':
             files.append("/autorun.sh")
@@ -330,7 +361,7 @@ def getLastSurveyDate():
 
 def updateFrontend():
     log("Update frontend.")
-    global count
+    global count, html_index
     p_processed = 0
     p_urls = userData.urls.values()
     for p_url in p_urls:
@@ -339,20 +370,19 @@ def updateFrontend():
 
 
 
-    htmlTemplateFile = open(get_app_path()+"/res/index_template.html", 'r')
-    htmlString = htmlTemplateFile.read()
-    htmlTemplateFile.close()
+
+    htmlString = template_index
     #todo: optimize
     nextSurvDateStr = getNextSurveyDate()
     #lastSurvDateStr = getLastSurveyDate()
-    dateString1 = ''
-    dateString2 = 'You have no more surveys remaining. You may now uninstall the user study after submitting your last survey'
+
+    dateString2 = 'You have no more surveys remaining. You may now uninstall the user study'
     if nextSurvDateStr is not None:
         dateString2 = 'Your next survey is due on '+nextSurvDateStr
     if survey_due():
-        dateString1 = 'You have a survey due today!<br>'
+        dateString2 = 'You have a survey due!<br>'
 
-    dateString = '<br>'+dateString1+dateString2
+    dateString = '<br>'+dateString2
     htmlString = htmlString.replace("$TOP_ALERT",frontend.top_alert() if survey_due() else '')
     htmlString = htmlString.replace("$DATE", dateString)
     htmlString = htmlString.replace("$STATUS", "Sleeping" if is_sleeping else "Processing")
@@ -424,25 +454,17 @@ def updateFrontend():
         rows += rowStr
 
     htmlString = htmlString.replace("$ROWS", rows)
-    indexFile = open(INDEX, "wb")
-    indexFile.write(htmlString.encode('utf8',errors="ignore"))
-    indexFile.close()
-    updateFrontend2()
-
-
+    html_index = htmlString
 
 def updateFrontend2():
+    global html_survey
     p_processed = 0
     p_urls = userData.urls.values()
     for p_url in p_urls:
         if (p_url.processed):
             p_processed += 1
 
-
-
-    htmlTemplateFile = open(get_app_path()+"/res/survey_template.html", 'r')
-    htmlString = htmlTemplateFile.read()
-    htmlTemplateFile.close()
+    htmlString = template_survey
 
     rows = ""
     entities_boosts = getMergedEntities()
@@ -487,7 +509,7 @@ def updateFrontend2():
             label = "Negative"
             color = "#FF0000;"
 
-        #todo: left off here
+
         sent_counts = [0,0,0] #neg, neu, pos
         for sent_label in entity.labels:
             sent_counts[int(sent_label)+1] += 1
@@ -507,9 +529,7 @@ def updateFrontend2():
         rows += rowStr
 
     htmlString = htmlString.replace("$ROWS", rows)
-    indexFile = open(SURVEY, "wb")
-    indexFile.write(htmlString.encode('utf8',errors="ignore"))
-    indexFile.close()
+    html_survey = htmlString
 
 def runServer():
 
@@ -594,16 +614,12 @@ def check_survey_reminder():
 
 
     # Send a reminder.
-    if survey_due() and (last_reminder_time is None or (datetime.datetime.now()-last_reminder_time).total_seconds() > 30):#3600*6):
+    if survey_due() and (last_reminder_time is None or (datetime.datetime.now()-last_reminder_time).total_seconds() > 3600*6):
         last_reminder_time = datetime.datetime.now()
-        print("remind")
-        with refresh_lock: #todo: left off here. This might not be necessary.
-            #updateFrontend()
-            print("sleep")
-        time.sleep(10)
-        # Run this in background thread to prevent blocking the interface (b/c for some reason on windows it blocks)
+
         log("Launch browser survey popup")
         #answer = messagebox.askyesno("Survey Reminder","You have a survey due.")
+        # Run this in background thread to prevent blocking the interface (b/c for some reason on windows it blocks)
         tr = threading.Thread(target=openBrowser, args=[port])
         tr.daemon = True  # This forces the child thread to exit whenever the parent (main) exits.
         tr.start()
@@ -690,22 +706,21 @@ def refresh():
 
         count = 0
         log("Links pre-processed.")
-        updateFrontend()
+        sorted_urls = sorted(userData.urls.items(), key=lambda x: x[1].timeVisited, reverse=True)
 
 
 
     # Time to process
-    for key,url in sorted(userData.urls.items(), key=lambda x: x[1].timeVisited, reverse=True):
-        if url.processed:
-            #print("skip")
-            continue
+    for key,url in sorted_urls:
+        with refresh_lock:
+            if url.processed:
+                #print("skip")
+                continue
 
-        if count%4 == 0:
-            with refresh_lock:
-                updateFrontend()
-                save()
-        if count >= project_constants.CAP:
-            break
+            if count%4 == 0:
+                    save()
+            if count >= project_constants.CAP:
+                break
 
 
         time.sleep(random.randint(15, 30))
@@ -718,31 +733,32 @@ def refresh():
             article.parse()
             document = article.title+"\n"+article.text
 
-            url.processed = True
-            count += 1
+            with refresh_lock:
+                url.processed = True
+                count += 1
 
-            # Article validation. Make sure it was extracted properly, it is english, and it's not a duplicate.
-            if len(document) < 100:
-                log("*** Article validation failed so ignoring. Reason: Too short. Link: " + url.url)
-                continue
-            if len(document) > 100000:
-                log("*** Article validation failed so ignoring. Reason: Too long. Link: " + url.url)
-                continue
+                # Article validation. Make sure it was extracted properly, it is english, and it's not a duplicate.
+                if len(document) < 100:
+                    log("*** Article validation failed so ignoring. Reason: Too short. Link: " + url.url)
+                    continue
+                if len(document) > 100000:
+                    log("*** Article validation failed so ignoring. Reason: Too long. Link: " + url.url)
+                    continue
 
-            sample_content = article.text[:2500]
-            articleHash = sha256(sample_content.encode('utf8', errors="ignore")).hexdigest()
-            hash_test = False
-            # Note it will test against itself but it will be None at this point so it doesn't matter.
-            for key_2, url_2 in sorted(userData.urls.items(), key=lambda x: x[1].timeVisited, reverse=True):
-                if url_2.hash != None and url_2.hash == articleHash:
-                    hash_test = True
-                    break
+                sample_content = article.text[:2500]
+                articleHash = sha256(sample_content.encode('utf8', errors="ignore")).hexdigest()
+                hash_test = False
+                # Note it will test against itself but it will be None at this point so it doesn't matter.
+                for key_2, url_2 in sorted(userData.urls.items(), key=lambda x: x[1].timeVisited, reverse=True):
+                    if url_2.hash != None and url_2.hash == articleHash:
+                        hash_test = True
+                        break
 
-            if hash_test:
-                log("*** Article validation failed so ignoring. Reason: Duplicate hash. Link: " + url.url)
-                continue
+                if hash_test:
+                    log("*** Article validation failed so ignoring. Reason: Duplicate hash. Link: " + url.url)
+                    continue
 
-            url.hash = articleHash # At this point it is safe to assign the hash. Duplicates and other articles with issues will have None for hash.
+                url.hash = articleHash # At this point it is safe to assign the hash. Duplicates and other articles with issues will have None for hash.
 
             if detect(sample_content) != 'en':
                 log("*** Article validation failed so ignoring. Reason: Not in english. Link: " + url.url)
@@ -795,24 +811,25 @@ def refresh():
 
                     db_data = [nameKey, d[0], d[1]]
 
-                if nameKey in userData.entities:
-                    userEntity = userData.entities[nameKey]
-                    userEntity.labels.append(bucketScore)
-                    userEntity.links.append(url.url)
-                else:
-                    userData.entities[nameKey] = UserDataEntity(entitySentiment.name)
-                    userData.entities[nameKey].labels.append(bucketScore)
-                    userData.entities[nameKey].links.append(url.url)
-                    userData.entities[nameKey].dbpedia_data = db_data
+                with refresh_lock:
+                    if nameKey in userData.entities:
+                        userEntity = userData.entities[nameKey]
+                        userEntity.labels.append(bucketScore)
+                        userEntity.links.append(url.url)
+                    else:
+                        userData.entities[nameKey] = UserDataEntity(entitySentiment.name)
+                        userData.entities[nameKey].labels.append(bucketScore)
+                        userData.entities[nameKey].links.append(url.url)
+                        userData.entities[nameKey].dbpedia_data = db_data
 
 
         except Exception as e:
             log('Skip article processing due to Error: ' + str(e))
             continue
 
-    is_sleeping = True
+
     with refresh_lock:
-        updateFrontend()
+        is_sleeping = True
         save()
     log("Done refreshing. Sleeping for "+str(project_constants.SLEEP_TIME)+" hours")
 
@@ -973,7 +990,14 @@ if __name__ == '__main__':
             log('NOT RUNNING BECAUSE ALREADY RUNNING!')
             exit(1)
 
+        with open(get_app_path()+"/res/index_template.html", 'r') as index_template_file:
+            template_index = index_template_file.read()
+        with open(get_app_path()+"/res/survey_template.html", 'r') as survey_template_file:
+            template_survey = survey_template_file.read()
+        with open(get_app_path()+"/res/thanks.html", 'r') as thanks_file:
+            template_thanks = thanks_file.read()
 
+        log("static html templates loaded")
 
         server = socketserver.TCPServer(('localhost', 0), MyRequestHandler)
         port = server.socket.getsockname()[1]
