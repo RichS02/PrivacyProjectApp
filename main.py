@@ -378,7 +378,7 @@ def updateFrontend():
 
     dateString2 = 'You have no more surveys remaining. You may now uninstall the user study'
     if nextSurvDateStr is not None:
-        dateString2 = 'Your next survey is due on '+nextSurvDateStr
+        dateString2 = 'Please complete your next survey on or after '+nextSurvDateStr
     if survey_due():
         dateString2 = 'You have a survey due!<br>'
 
