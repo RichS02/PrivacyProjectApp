@@ -902,7 +902,7 @@ def initGUI():
                      "start a survey or view more information about the system. Please complete a survey each week for one month.", width=495, justify=CENTER)
     window.geometry('600x200')
     window.resizable(False, False)
-    m.pack()
+
 
     m.grid(column=1, row=1)
 
@@ -914,8 +914,16 @@ def initGUI():
 
     quit_btn.grid(column=0, row=0)
 
-    log("GUI Done")
 
+
+    #Mac Mojave Text Render bug fix
+    window.update()
+    window.geometry('600x201')
+
+    #Fix mac re-open minimized window bug
+    if sys.platform == "darwin":
+        window.createcommand('tk::mac::ReopenApplication', window.deiconify)
+    log("GUI Done")
     window.mainloop()
 
 def writeAutostartupFiles():
