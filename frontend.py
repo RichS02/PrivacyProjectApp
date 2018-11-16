@@ -1,6 +1,10 @@
 #todo Move all dynamic frontend here.
 from urllib import parse
 
+def top_alert():
+    html = '<div class="alert alert-danger" role="alert"><strong>REMINDER!</strong> You have a survey due. Please complete it by today or as soon as possible.</div>'
+    return html
+
 def popoverWithLinks(links,i):
     html = ''
     html_start = '<br><br><a class="btn btn-primary btn-sm" tabindex="0" data-toggle="popover" data-popover-content="#pop'+str(i)+'" data-placement="right">View Links</a>\

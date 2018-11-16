@@ -13,7 +13,8 @@ except OSError as e:
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename=HOME_PATH+'/system.log',level=logging.WARNING)
 
 import threading
-uninstall_lock = threading.Lock()
+refresh_lock = threading.Lock()
+survey_lock = threading.Lock()
 log_ignore_lock = threading.Lock()
 log_ignore = False
 def log(mes):
@@ -77,10 +78,10 @@ USER_DATA = HOME_PATH+"/user-data.bin"
 INDEX = HOME_PATH+"/index.html"
 SURVEY = HOME_PATH+"/survey.html"
 ROW_URL = 0
-CAP = 500
 NEUTRAL_THRESHOLD_UPPER = 0.114
 NEUTRAL_THRESHOLD_LOWER = -0.062
-RECORD_TIME_LIMIT = 31540000  # Seconds
+last_reminder_time = None
+user_survey_week = 1
 userData = None
 old_time = None
 last_process_time = None
@@ -139,13 +140,23 @@ class UserData:
     def __init__(self):
         self.urls = {}
         self.entities = {}
+        self.survey_week = 1 # When get_survey_week() is > survey_week then prompt user to submit survey.
 
 
 class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
     #We don't use CWD because it causes issues on windows when opening a browser because the sub process inherits CWD and then fails to uninstall that directory. Could also fix by modifying the browser sub process but this is easier.
     def translate_path(self, path):
         #path = http.server.SimpleHTTPRequestHandler.translate_path(self, path)
+        if path.startswith('http'):
+            return path # Don't modify paths for http. Used for the google form.
         return HOME_PATH+path if path != '/thanks.html' else get_app_path()+'/res'+path
+
+    def end_headers(self):
+        print('TEST------------------------------TEST')
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        http.server.SimpleHTTPRequestHandler.end_headers(self)
 
     def do_GET(self):
 
@@ -157,6 +168,7 @@ class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         len = int(self.headers.get('Content-Length'))
         body = self.rfile.read(len).decode('utf8',errors="ignore")
+
         if 'uninstall' in body:
             log("Uninstalling")
             self.path = '/thanks.html'
@@ -164,6 +176,20 @@ class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
             thread3 = threading.Thread(target=uninstall)
             thread3.daemon = True
             thread3.start()
+        elif 'results=' in body:
+            log("User submitting survey.")
+            results = body.replace('results=','')
+            full_path = project_constants.GOOGLE_FORM_FILL_PATH+results
+            self.send_response(301) # Redirect
+            self.send_header('Location', full_path)
+            self.end_headers()
+            with refresh_lock:
+                with survey_lock:
+                    global user_survey_week
+                    user_survey_week = get_survey_week()
+                updateFrontend()
+                save()
+            return
 
         return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
@@ -173,7 +199,7 @@ def uninstall():
     with log_ignore_lock:
         global log_ignore
         log_ignore = True
-    with uninstall_lock:
+    with refresh_lock:
         #try:
         #    os.chdir(Path.home())  # Important, can't rmdir cwd on windows.
         #except:
@@ -269,12 +295,21 @@ def getMergedEntities():
     return sorted(final, key=lambda x: x[0].getFrequency()+x[1], reverse=True)[:30]
 
 
+def get_survey_week():
+    now = datetime.datetime.now()
+    start = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+    delta = now - start
+    step = delta.days // 7 + 1
+    if step > (project_constants.STUDY_DURATION+1): #4 weeks pass
+        step = (project_constants.STUDY_DURATION+1)
+    return step
+
 def getNextSurveyDate():
     now = datetime.datetime.now()
     start = datetime.datetime.strptime(start_date, "%Y-%m-%d")
     delta = now - start
     step = delta.days//7 + 1
-    if step >= 5: #4 weeks pass
+    if step >= (project_constants.STUDY_DURATION+1): #4 weeks pass
         return None
     addition = datetime.timedelta(days=7*step)
     final = start+addition
@@ -287,8 +322,8 @@ def getLastSurveyDate():
     step = delta.days//7 + 1
     if step == 1:
         return None
-    if step > 5:
-        step = 5 #cap to last week
+    if step > (project_constants.STUDY_DURATION+1):
+        step = (project_constants.STUDY_DURATION+1) #cap to last week
     addition = datetime.timedelta(days=7*(step-1))
     final = start+addition
     return final.strftime("%b %d, %Y")
@@ -309,18 +344,19 @@ def updateFrontend():
     htmlTemplateFile.close()
     #todo: optimize
     nextSurvDateStr = getNextSurveyDate()
-    lastSurvDateStr = getLastSurveyDate()
+    #lastSurvDateStr = getLastSurveyDate()
     dateString1 = ''
-    dateString2 = 'You have no more surveys remaining, you may now uninstall the user study'
+    dateString2 = 'You have no more surveys remaining. You may now uninstall the user study after submitting your last survey'
     if nextSurvDateStr is not None:
-        dateString2 = 'Please submit your next survey on or after '+nextSurvDateStr
-    if lastSurvDateStr is not None:
-        dateString1 = 'Your last survey was due on or after '+lastSurvDateStr + '. <br>'
+        dateString2 = 'Your next survey is due on '+nextSurvDateStr
+    if survey_due():
+        dateString1 = 'You have a survey due today!<br>'
 
     dateString = '<br>'+dateString1+dateString2
+    htmlString = htmlString.replace("$TOP_ALERT",frontend.top_alert() if survey_due() else '')
     htmlString = htmlString.replace("$DATE", dateString)
     htmlString = htmlString.replace("$STATUS", "Sleeping" if is_sleeping else "Processing")
-    htmlString = htmlString.replace("$CURRENT_ARTICLES", str(count)+"/"+str(CAP))
+    htmlString = htmlString.replace("$CURRENT_ARTICLES", str(count)+"/"+str(project_constants.CAP))
     htmlString = htmlString.replace("$TOTAL_ARTICLES", str(p_processed) + "/" + str(len(p_urls)))
     htmlString = htmlString.replace("$LAST_TIME", str(last_process_time))
 
@@ -482,6 +518,8 @@ def runServer():
 
 def save():
     log("Save")
+    with survey_lock:
+        userData.survey_week = user_survey_week
     userDataFile = open(USER_DATA, mode='wb')
     pickle.dump(userData, userDataFile)
     userDataFile.close()
@@ -545,14 +583,43 @@ def isGraylisted(host):
             return True
     return False
 
+def survey_due():
+    with survey_lock:
+        last_week_num = user_survey_week
+    current_week_num = get_survey_week()
+    return last_week_num < current_week_num
+
+def check_survey_reminder():
+    global last_reminder_time
+
+
+    # Send a reminder.
+    if survey_due() and (last_reminder_time is None or (datetime.datetime.now()-last_reminder_time).total_seconds() > 30):#3600*6):
+        last_reminder_time = datetime.datetime.now()
+        print("remind")
+        with refresh_lock: #todo: left off here. This might not be necessary.
+            #updateFrontend()
+            print("sleep")
+        time.sleep(10)
+        # Run this in background thread to prevent blocking the interface (b/c for some reason on windows it blocks)
+        log("Launch browser survey popup")
+        #answer = messagebox.askyesno("Survey Reminder","You have a survey due.")
+        tr = threading.Thread(target=openBrowser, args=[port])
+        tr.daemon = True  # This forces the child thread to exit whenever the parent (main) exits.
+        tr.start()
+
+
+
+
+
 
 def refresh():
-    global old_time, last_process_time, is_sleeping, count, persons_dict, reset_user_data
-    if old_time != None and time.time() - old_time < 60*60*12:  # Every 12 hours.
+    global old_time, last_process_time, is_sleeping, count, persons_dict, reset_user_data, user_survey_week
+    if old_time != None and time.time() - old_time < 60*60*project_constants.SLEEP_TIME:  # Every 12 hours.
         #print("Skip because sleeping.")
         return
 
-    with uninstall_lock:
+    with refresh_lock:
         log("Refresh")
         is_sleeping = False
         last_process_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -579,6 +646,8 @@ def refresh():
             if error:
                 os._exit(1)
         reset_user_data = False
+        with survey_lock:
+            user_survey_week = userData.survey_week
         db = sqlite3.connect(HISTORY_COPY, timeout=30)
         cursor = db.cursor()
         # Fetches top 6000 most recent URLs that are not hidden, have a view count. Further processing checks if the URLs are within the past year, and not blacklisted etc.
@@ -594,7 +663,7 @@ def refresh():
             link_time = row[1]
             t1 = datetime.datetime(1601, 1, 1) + datetime.timedelta(microseconds=link_time)
             t2 = datetime.datetime.now()
-            if (t2 - t1).total_seconds() > RECORD_TIME_LIMIT:
+            if (t2 - t1).total_seconds() > project_constants.RECORD_TIME_LIMIT:
                 log("Stop fetching links because > year.")
                 break # Rows are in DESC order (oldest last) so no need to keep recording.
             linkData = parse.urlsplit(link)
@@ -632,10 +701,10 @@ def refresh():
             continue
 
         if count%4 == 0:
-            with uninstall_lock:
+            with refresh_lock:
                 updateFrontend()
                 save()
-        if count >= CAP:
+        if count >= project_constants.CAP:
             break
 
 
@@ -742,10 +811,10 @@ def refresh():
             continue
 
     is_sleeping = True
-    with uninstall_lock:
+    with refresh_lock:
         updateFrontend()
         save()
-    log("Done refreshing. Sleeping for 12 hours")
+    log("Done refreshing. Sleeping for "+str(project_constants.SLEEP_TIME)+" hours")
 
     old_time = time.time()
 
@@ -755,6 +824,7 @@ def runSystem():
     while True:
         try:
             refresh()
+            check_survey_reminder()
             time.sleep(random.randint(60, 120))
         except Exception as exp:
             log("************************************* EXCEPTION IN CORE THREAD *************************************")
@@ -794,7 +864,7 @@ def quit_action():
                                             " the study by running the application again. If you are looking to completely uninstall, "
                                             "select the 'uninstall' button in the dashboard.")
     if answer:
-        with uninstall_lock:
+        with refresh_lock:
             log('USER CHOSE TO QUIT THE APPLICATION')
             os._exit(0)
 

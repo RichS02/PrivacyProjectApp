@@ -192,7 +192,19 @@ if (err) {
 alert("Error: Please provide a response for each entity.")
 return
 }
-location.href = "https://docs.google.com/forms/d/e/1FAIpQLSfNF-x2fsf0BTpqlrlHxrHxRRjxgxTV4vdsewgENxzJuYBhsA/viewform?usp=pp_url&entry.1537839056="+results;
+
+
+var form = document.createElement("form");
+form.setAttribute("method", "post");
+form.setAttribute("action", "/");
+var field = document.createElement("input");
+field.setAttribute("type", "hidden");
+field.setAttribute("name", "results");
+field.setAttribute("value", results);
+form.appendChild(field);
+document.body.appendChild(form);
+form.submit();
+
 }
 </script>
 
