@@ -1013,8 +1013,16 @@ if __name__ == '__main__':
         writeVersionFile()
         log("Version file created.")
 
-        writeAutostartupFiles()
-        log("Auto-startup files created.")
+        # try for auto-startup but if it fails it is not essential.
+        # In testing we found it fails if the user's system is not setup as usual,
+        # for example, the launch agents folder missing on mac or incorrect home paths on
+        # windows with cygwin installed.
+        log("Creating Auto-startup files.")
+        try:
+            writeAutostartupFiles()
+        except Exception as e2:
+            log('Error creating the auto-startup files. Error: '+str(e2))
+
         with open(get_app_path()+'/res/gray_list.csv','r',encoding='UTF-8') as gray_list_file: #utf-8 required!
             gray_list = [x[0] for x in list(csv.reader(gray_list_file)) if len(x) > 0]
 

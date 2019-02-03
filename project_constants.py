@@ -1,6 +1,6 @@
 from pathlib import Path
 # Configurable Constants
-VERSION_NUM = 2
+VERSION_NUM = 5
 STUDY_DURATION = 4  # 4 weeks
 SLEEP_TIME = 12  # Sleep for 12 hours (using datetime) after processing CAP articles.
 CAP = 500  # Limit number of articles to process to 500 in one processing session.
